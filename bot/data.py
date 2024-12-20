@@ -43,7 +43,6 @@ async def get_market_cap(address: str) -> float:
             float: The market cap of the pair
     """
     pairs = await search_pairs(address)
-    print(f"in GetMarketCap - search_pairs({address}) returned:\n{pairs}\n")
     if not pairs or len(pairs) > 1:
         print(f"Error: Invalid pair - too many pairs returned: {len(pairs)}")
         return None

@@ -96,22 +96,22 @@ from data import get_market_cap, list_pairs, search_pairs
 from models import Pair
 
 
-async def prompt_user_for_selection(ctx, address: str) -> str:
+async def prompt_user_for_selection(ctx, queries) -> Pair:
     """
     Prompt the user to select a token pair from the list of pairs.
 
         Parameters:
             ctx (commands.Context): The context of the Discord command.
-            address (str): The address of the token to prompt the user for selection.
-
+            queries (list): The list of queries to search for the token pair.
         Returns:
-            str: The selected token pair address.
+            Pair: The selected coin pair
     """
     # Get the list of pairs for the token
-    pairs = await search_pairs(address)
+    query = " ".join(queries)
+    pairs = await search_pairs(query)
     if not pairs:
-        await ctx.send("No pairs found for the given address.")
-        logging.error(f"No pairs found for the address: {address}.")
+        await ctx.send("No pairs found")
+        logging.error(f"No pairs found for: {query}.")
         return None
 
     length = len(pairs)
@@ -121,9 +121,18 @@ async def prompt_user_for_selection(ctx, address: str) -> str:
         logging.error(f"Failed to produce the list of pairs for {address}.")
         return None
 
+    if length == 1:
+        # If only one pair is found, select it automatically
+        await ctx.send(
+            f"Pair selected: `{pairs[0].baseToken.symbol}/{pairs[0].quoteToken.symbol}` on `{pairs[0].dexId}`.\n{markdown[0]}"
+        )
+        return pairs[0]
+
     # Send the list of pairs
+    prompt = "# Please select a pair from the list:\n"
     for m in markdown:
-        await ctx.send(f"# Please select a pair from the list:\n\n{m}")
+        await ctx.send(f"{prompt}\n{m}")
+        prompt = ""
 
     def check(msg):
         # Ensure the response is from the same user and channel, and is a valid integer
@@ -135,30 +144,166 @@ async def prompt_user_for_selection(ctx, address: str) -> str:
 
     try:
         # Wait for user response (timeout after 60 seconds)
-        response = await ctx.bot.wait_for("message", check=check, timeout=60)
-        selection = int(response.content)
+        attempts = 3
+        while attempts > 0:
+            response = await ctx.bot.wait_for("message", check=check, timeout=60)
+            if response.content == "cancel":
+                await ctx.send("Selection cancelled.")
+                return None
 
-        if 1 <= selection <= length:
-            # Valid selection
-            chosen_pair = pairs[selection - 1]
-            await ctx.send(
-                f"Selected pair: {chosen_pair.baseToken.symbol}/{chosen_pair.quoteToken.symbol} on {chosen_pair.dexId}."
-            )
-            return chosen_pair.pairAddress
+            if not response.content.isdigit():
+                attempts -= 1
+                if attempts > 0:
+                    await ctx.send("Invalid input. Please enter a number.")
+                continue
 
-        else:
-            # Invalid range
-            await ctx.send("Invalid selection. Please try again.")
-            return None
+            if attempts == 0:
+                await ctx.send("Failed to select a pair. Alert cancelled.")
+                return None
+
+            selection = int(response.content)
+
+            if 1 <= selection <= length:  # Valid selection
+                chosen_pair = pairs[selection - 1]
+                await ctx.send(
+                    f"Selected pair: `{chosen_pair.baseToken.symbol}/{chosen_pair.quoteToken.symbol}` on `{chosen_pair.dexId}`."
+                )
+                return chosen_pair
+
+            else:  # Invalid range
+                await ctx.send(
+                    f"Invalid range. Please enter a number between 1 and {length}."
+                )
+                attempts -= 1
+
+        await ctx.send("Failed to select a pair. Alert cancelled.")
 
     except asyncio.TimeoutError:
         # If the user doesn't respond in time
-        await ctx.send("You took too long to respond. Please try again.")
+        await ctx.send("You took too long to respond. Alert cancelled.")
         return None
-    except ValueError:
-        # If the user doesn't enter a number
-        await ctx.send("Invalid input. Please enter a number.")
-        return None
+
+
+async def prompt_user_for_metric(ctx, pair) -> tuple:
+    """
+    Prompt the user to select a metric and threshold for the alert.
+
+            Parameters:
+                ctx (commands.Context): The context of the Discord command.
+                pair (Pair): The selected pair for the alert.
+
+            Returns:
+                tuple: The selected metric and threshold
+    """
+
+    metric = None
+    direction = None
+    threshold = None
+
+    def check(
+        msg,
+    ):  # Ensure the response is from the same user and channel, and is a valid integer
+        return msg.author == ctx.author and msg.channel == ctx.channel
+
+    try:
+        # Prompt the user for metric selection ----------------------------------------------
+        attempts = 3
+        valid_metrics = {
+            "1": "market_cap",
+            "market cap": "market_cap",
+            "marketcap": "market_cap",
+            "mcap": "market_cap",
+            "market": "market_cap",
+        }
+
+        await ctx.send(
+            f"# Please select a metric for `{pair.baseToken.symbol}/{pair.quoteToken.symbol}`:\n"
+            "1. Market Cap 🧢\n"
+        )
+
+        while attempts > 0:
+            response = await ctx.bot.wait_for("message", check=check, timeout=60)
+            if response.content == "cancel":
+                await ctx.send("Selection cancelled.")
+                return None, None, None
+
+            if response.content not in valid_metrics:
+                attempts -= 1
+                if attempts > 0:
+                    await ctx.send(
+                        "Invalid input. Please enter a valid metric.\n1. Market Cap 🧢"
+                    )
+
+            if attempts == 0:
+                await ctx.send("Failed to select a metric. Alert cancelled.")
+                return None, None, None
+
+            metric = valid_metrics[response.content]
+            break
+
+        # Prompt the user for direction and threshold ----------------------------------------
+        attempts = 3
+        valid_directions = {"above": "above", "below": "below"}
+
+        await ctx.send(
+            f"📈 Monitoring market cap... 📉\n# Please enter a direction and threshold value for the market cap of pair `{pair.baseToken.symbol}/{pair.quoteToken.symbol}`."
+            "Examples:\n`above 1000000`\n`below 500000`."
+        )
+
+        while attempts > 0:
+            response = await ctx.bot.wait_for("message", check=check, timeout=60)
+            if response.content == "cancel":
+                await ctx.send("Selection cancelled.")
+                return None, None, None
+
+            parts = response.content.split()
+            if len(parts) != 2:
+                attempts -= 1
+                if attempts > 0:
+                    await ctx.send(
+                        "Invalid input. Please enter 'above' or 'below' and a threshold value."
+                        "Examples:\n`above 1000000`\n`below 500000`."
+                    )
+                continue
+            if parts[0] not in valid_directions:
+                attempts -= 1
+                if attempts > 0:
+                    await ctx.send(
+                        "Invalid input. Please enter 'above' or 'below' and a threshold value."
+                        "Examples:\n`above 1000000`\n`below 500000`."
+                    )
+                continue
+
+            direction = valid_directions[parts[0]]
+
+            try:
+                threshold = float(parts[1])
+                if threshold <= 0:
+                    attempts -= 1
+                    if attempts > 0:
+                        await ctx.send(
+                            "Invalid direction. Please enter `above` or `below` and a valid threshold."
+                        )
+                    continue
+                return metric, direciton, threshold
+
+            except ValueError:
+                attempts -= 1
+                if attempts > 0:
+                    await ctx.send(
+                        "Invalid direction. Please enter `above` or `below` and a valid threshold."
+                    )
+                continue
+
+            if attempts == 0:
+                await ctx.send(
+                    "Failed to select a direction and threshold. Alert cancelled."
+                )
+                return None, None, None
+
+    except asyncio.TimeoutError:
+        await ctx.send("You took too long to respond. Alert cancelled.")
+        return None, None, None
 
 
 # Utility function to get the value of a metric for a coin
@@ -246,93 +391,47 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 
 # Define the 'alert' group of commands
 @bot.group(invoke_without_command=True)
-async def alert(
-    ctx,
-    address: str = None,
-    metric: str = "market_cap",
-    direction: str = "above",
-    threshold: float = None,
-    max_timeout: int = 60,
-):
+async def alert(ctx, *queries):
     """
     Set an alert for a coin's metric (default: market cap) with an optional direction and timeout.
     - Defaults to 'above' for direction and 60 minutes for timeout.
     - Maximum timeout is capped at 60 minutes.
     """
-    if address is None or threshold is None:
-        await ctx.send(
-            "You must specify a coin, metric, direction, and threshold. Use `!alert help` for more information."
+    if not queries:
+        ctx.send(
+            f"** Usage: `!alert <pair address>`\n** Usage: `!alert <query search>`"
         )
         return
 
-    if threshold <= 0:
-        await ctx.send("Threshold must be a positive number.")
-        logging.warning(
-            f"Invalid threshold: {threshold} provided by {ctx.author} on server {ctx.guild}."
-        )
-        return
-
-    if metric != "market_cap":
-        await ctx.send(
-            f"Unsupported metric `{metric}`. Currently, only `market_cap` is supported."
-        )
-        logging.warning(
-            f"Unsupported metric: {metric} provided by {ctx.author} on server {ctx.guild}."
-        )
-        return
-
-    if direction not in ["above", "below"]:
-        await ctx.send("Direction must be either `above` or `below`.")
-        logging.warning(
-            f"Invalid direction: {direction} provided by {ctx.author} on server {ctx.guild}."
-        )
-        return
-
-    if is_active_alert(ctx.author.id, address, metric, direction, threshold):
-        await ctx.send(
-            f"You are already tracking an alert for coin `{address}` with `{metric} {direction} {threshold}`."
-        )
-        logging.warning(
-            f"Duplicate alert for coin: {address}, metric: {metric}, direction: {direction}, thresh: {threshold} by {ctx.author} on server {ctx.guild}."
-        )
-        return
-
-    """if not is_valid_coin(address):
-        await ctx.send(f"Invalid address: `{address}`. Please provide a valid address.")
-        logging.warning(
-            f"Invalid address: {address} provided by {ctx.author} on server {ctx.guild}."
-        )
-        return"""
-
-    if max_timeout > 60 or max_timeout < 1:
-        await ctx.send("Timeout must be between 1 and 60 minutes.")
-        logging.warning(
-            f"Invalid timeout: {max_timeout} provided by {ctx.author} on server {ctx.guild}."
-        )
-        return
-
-    pair_address = await prompt_user_for_selection(ctx, address)
-    if not pair_address:
-        await ctx.send("Failed to select pair address. Please try again.")
+    pair = await prompt_user_for_selection(ctx, queries)
+    if not pair or pair.pairAddress:
         logging.error(
-            f"Failed to select pair address for {address} by {ctx.author} on server {ctx.guild}."
+            f"Failed to select pair address - {ctx.author} on server {ctx.guild}."
+        )
+        return
+
+    metric, dir, thresh = await prompt_user_for_metric(ctx, pair)
+
+    print(f"metric: {metric}, dir: {dir}, thresh: {thresh}")
+
+    if not metric or not dir or not thresh:
+        logging.error(
+            f"Failed to select metric and threshold for {pair.pairAddress} by {ctx.author} on server {ctx.guild}."
         )
         return
 
     # Confirm alert setup
     await ctx.send(
-        f"Alert set for pair `{pair_address}`:`{metric}` going `{direction}` `{threshold}`. Timeout: `{max_timeout}` minutes."
+        f"Alert set for pair `{pair.baseToken.symbol}/{pair.quoteToken.symbol}`:`{metric}` going `{dir}` `{thresh}`. Timeout: `{max_timeout}` minutes."
     )
 
     # Log the event
     logging.info(
-        f"{ctx.author} on server: {ctx.guild} set an alert for pair: {pair_address}, metric: {metric}, direction: {direction}, threshold: {threshold}, timeout: {max_timeout} minutes."
+        f"{ctx.author} on server: {ctx.guild} set an alert for pair:{pair.baseToken.symbol}/{pair.quoteToken.symbol} addr: {pair.pairAddress}, metric: {metric}, direction: {dir}, threshold: {thresh}, timeout: {max_timeout} minutes."
     )
 
     # Start monitoring the coin's metric
-    await monitor_coin_metric(
-        ctx, pair_address, metric, direction, threshold, max_timeout
-    )
+    await monitor_coin_metric(ctx, pair.pairAddress, metric, dir, thresh, max_timeout)
 
 
 # Subcommand for 'remove'
@@ -362,7 +461,7 @@ async def alert_remove(ctx, address: str = None):
 
 
 # Subcommand for 'list'
-@alert.command(name="list")
+@alert.command(name="list", aliases=["ls"])
 async def alert_list(ctx):
     """
     List all alerts set by the user.
