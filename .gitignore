@@ -1,0 +1,23 @@
+# Python
+venv/
+*.pyc
+__pycache__/
+
+
+# Docker
+*.pid
+*.tar
+.dockerignore
+
+# Logs
+*.log
+*.out
+*.err
+
+# Secrets
+*.env
+
+# macOS
+.DS_Store
+
+
