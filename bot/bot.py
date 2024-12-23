@@ -110,7 +110,7 @@ async def prompt_user_for_selection(ctx, queries) -> Pair:
     query = " ".join(queries)
     pairs = await search_pairs(query)
     if not pairs:
-        await ctx.send("No pairs found")
+        await ctx.send("No pairs found. Try searching the token name.")
         logging.error(f"No pairs found for: {query}.")
         return None
 
