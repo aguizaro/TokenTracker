@@ -404,6 +404,7 @@ async def alert(ctx, *queries):
         return
 
     pair = await prompt_user_for_selection(ctx, queries)
+    print(f"chosen pair: {pair}")
     if not pair or pair.pairAddress:
         logging.error(
             f"Failed to select pair address - {ctx.author} on server {ctx.guild}."
