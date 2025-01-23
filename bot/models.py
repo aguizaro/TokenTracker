@@ -11,27 +11,27 @@ class Token(BaseModel):
 
 
 class Volume(BaseModel):
-    h24: float
-    h6: float
-    h1: float
-    m5: float
+    h24: Optional[float] = None
+    h6: Optional[float] = None
+    h1: Optional[float] = None
+    m5: Optional[float] = None
 
 
 class PriceChange(BaseModel):
-    m5: float
-    h1: float
-    h6: float
-    h24: float
+    m5: Optional[float] = None
+    h1: Optional[float] = None
+    h6: Optional[float] = None
+    h24: Optional[float] = None
 
 
 class Liquidity(BaseModel):
-    usd: float
-    base: float
-    quote: float
+    usd: Optional[float] = None
+    base: Optional[float] = None
+    quote: Optional[float] = None
 
 
 class Website(BaseModel):
-    url: HttpUrl
+    url: Optional[HttpUrl] = None
 
 
 class Socials(BaseModel):
