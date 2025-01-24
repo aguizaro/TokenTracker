@@ -166,7 +166,7 @@ async def prompt_user_for_selection(ctx, queries) -> Pair:
             if 1 <= selection <= length:  # Valid selection
                 chosen_pair = pairs[selection - 1]
                 await ctx.send(
-                    f"Selected pair: `{chosen_pair.baseToken.symbol}/{chosen_pair.quoteToken.symbol}` on `{chosen_pair.dexId}`."
+                    f"Selected pair: `{chosen_pair.baseToken.symbol}/{chosen_pair.quoteToken.symbol}` on `{chosen_pair.dexId}`.\n pairAddress: {chosen_pair.pairAddress}"
                 )
                 return chosen_pair
 
@@ -247,7 +247,7 @@ async def prompt_user_for_metric(ctx, pair) -> tuple:
 
         await ctx.send(
             f"📈 Monitoring market cap... 📉\n# Please enter a direction and threshold value for the market cap of pair `{pair.baseToken.symbol}/{pair.quoteToken.symbol}`."
-            "Examples:\n`above 1000000`\n`below 500000`."
+            "\nExamples:\n`above 1000000`\n`below 500000`."
         )
 
         while attempts > 0:
@@ -285,7 +285,7 @@ async def prompt_user_for_metric(ctx, pair) -> tuple:
                             "Invalid direction. Please enter `above` or `below` and a valid threshold."
                         )
                     continue
-                return metric, direciton, threshold
+                return metric, direction, threshold
 
             except ValueError:
                 attempts -= 1
@@ -388,6 +388,9 @@ intents.message_content = True  # Enable message content intent
 # Create a bot instance with the necessary intents
 bot = commands.Bot(command_prefix="!", intents=intents)
 
+# Maximum timeout for alerts (in minutes)
+MAX_TIMEOUT = 60
+
 
 # Define the 'alert' group of commands
 @bot.group(invoke_without_command=True)
@@ -405,7 +408,8 @@ async def alert(ctx, *queries):
 
     pair = await prompt_user_for_selection(ctx, queries)
     print(f"chosen pair: {pair}")
-    if not pair or pair.pairAddress:
+    print(f"pair address: {pair.pairAddress}")
+    if not pair or not pair.pairAddress:
         logging.error(
             f"Failed to select pair address - {ctx.author} on server {ctx.guild}."
         )
@@ -423,16 +427,16 @@ async def alert(ctx, *queries):
 
     # Confirm alert setup
     await ctx.send(
-        f"Alert set for pair `{pair.baseToken.symbol}/{pair.quoteToken.symbol}`:`{metric}` going `{dir}` `{thresh}`. Timeout: `{max_timeout}` minutes."
+        f"Alert set for pair `{pair.baseToken.symbol}/{pair.quoteToken.symbol}`:`{metric}` going `{dir}` `{thresh}`. Timeout: `{MAX_TIMEOUT}` minutes."
     )
 
     # Log the event
     logging.info(
-        f"{ctx.author} on server: {ctx.guild} set an alert for pair:{pair.baseToken.symbol}/{pair.quoteToken.symbol} addr: {pair.pairAddress}, metric: {metric}, direction: {dir}, threshold: {thresh}, timeout: {max_timeout} minutes."
+        f"{ctx.author} on server: {ctx.guild} set an alert for pair:{pair.baseToken.symbol}/{pair.quoteToken.symbol} addr: {pair.pairAddress}, metric: {metric}, direction: {dir}, threshold: {thresh}, timeout: {MAX_TIMEOUT} minutes."
     )
 
     # Start monitoring the coin's metric
-    await monitor_coin_metric(ctx, pair.pairAddress, metric, dir, thresh, max_timeout)
+    await monitor_coin_metric(ctx, pair.pairAddress, metric, dir, thresh, MAX_TIMEOUT)
 
 
 # Subcommand for 'remove'
