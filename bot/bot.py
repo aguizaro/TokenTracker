@@ -40,8 +40,6 @@ def is_active_alert(
 ) -> bool:
     # Check if the user is already tracking the coin
 
-    # print ttl
-    print(redis_client.ttl(f"{user_id}:{address}:{metric}:{direction}:{threshold}"))
     return redis_client.exists(f"{user_id}:{address}:{metric}:{direction}:{threshold}")
 
 
@@ -53,8 +51,6 @@ def add_alert_to_redis(
     threshold: float,
     max_timeout: int,
 ):
-
-    print(f"max_timeout: {max_timeout}")
 
     # Store the tracking data in Redis with TTL
     redis_client.setex(
@@ -407,8 +403,6 @@ async def alert(ctx, *queries):
         return
 
     pair = await prompt_user_for_selection(ctx, queries)
-    print(f"chosen pair: {pair}")
-    print(f"pair address: {pair.pairAddress}")
     if not pair or not pair.pairAddress:
         logging.error(
             f"Failed to select pair address - {ctx.author} on server {ctx.guild}."
@@ -416,8 +410,6 @@ async def alert(ctx, *queries):
         return
 
     metric, dir, thresh = await prompt_user_for_metric(ctx, pair)
-
-    print(f"metric: {metric}, dir: {dir}, thresh: {thresh}")
 
     if not metric or not dir or not thresh:
         logging.error(
